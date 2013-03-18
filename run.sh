@@ -1,0 +1,10 @@
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture scenario13h_adap_1
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture scenario13h_robst_1
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture scenario13h_short_1
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture scenario13h_shortadaprobst405000_1
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture scenario13h_shortnocon_1
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture senario14h_adap_3
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture senario14h_robst_3
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture senario14h_short_3
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture senario14h_shortadaprobst405000_3
+java -cp .:je.jar  DATA_BASE_MANAGER/TestEcriture senario14h_shortnocon_3

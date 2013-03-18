@@ -1,0 +1,313 @@
+
+/*  This file is part of CASTOR.
+
+    CASTOR is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Foobar is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with CASTOR.  If not, see <http://www.gnu.org/licenses/
+
+*/
+
+import java.io.*;
+import java.util.*;
+import LYAPUNOV.*;
+import DATA_BASE_MANAGER.*;
+import TRAFFIC.*;
+
+public class Control {
+
+    /*    parameters used for the experiment     */
+    /****************************************************************************/
+    /*
+    static final String NOM_GEN="FRANCE";
+    static final double HORIZON_PLUS=20; // en secondes
+    static final double HORIZON_MOINS=20;// en secondes
+    static final double T_INIT=30000; //en secondes
+    static final double T_FINAL=31000; //en secondes
+    static final double PERIODE=20; //en secondes
+    */
+
+    /*
+    static final String NOM_GEN="CROSSING";
+    static final double HORIZON_PLUS=20; // en secondes
+    static final double HORIZON_MOINS=20;// en secondes
+    static final double T_INIT=100; //en secondes
+    static final double T_FINAL=800; //en secondes
+    static final double PERIODE=20; //en secondes
+    */
+
+    
+    static final String NOM_GEN="MIX";
+    static final double HORIZON_PLUS=20; // en secondes
+    static final double HORIZON_MOINS=20;// en secondes
+    static final double T_INIT=100; //en secondes
+    static final double T_FINAL=800; //en secondes
+    static final double PERIODE=20; //en secondes
+    
+
+
+
+
+    static final double LAT_MIN=(47-5.5)*Constantes.DEGRE_TO_RADIAN; //en degres
+    static final double LAT_MAX=(47+5.5)*Constantes.DEGRE_TO_RADIAN; //en degres
+    static final double LONG_MIN=(0-5.5)*Constantes.DEGRE_TO_RADIAN; //en degres
+    static final double LONG_MAX=(0+5.5)*Constantes.DEGRE_TO_RADIAN; //en degres
+    static final double ALTI_MIN=0*Constantes.FL_TO_METER;//en FL
+    static final double ALTI_MAX=2*Constantes.FL_TO_METER;//en FL
+
+    static final int NBX=100;
+    static final int NBY=100;
+    static final int NBZ=2;
+    static final int CVDV=0; //0: cv seule 1: CV + DV
+
+   /****************************************************************************/
+
+
+
+
+    FiltreBase monFiltre;
+
+    String nomFichierMap,nomFichierImg,nomFichierFondCarte,nomFichierStat;
+    MapComplexity myMap;
+    KolmoNLinTempo myKolmo;
+    Convergence myConvergence;
+    GestionPlot myGestionPlot=new GestionPlot();
+    double[] fondX;
+    double[] fondY;
+    int nbPtFondCarte=0;
+
+
+   public Control(String nomGen,double horizonMoins,double horizonPlus)
+    {
+	String nomSortie="CARTES/"+nomGen;
+	FiltreBase.selectBase(nomGen);
+	monFiltre = new FiltreBase(horizonMoins,horizonPlus);
+	if (Constantes.METRIC==1){
+	    nomSortie=nomSortie+"_KL";
+	}
+	else
+	    {
+		nomSortie=nomSortie+"_CV";
+	    }
+	nomFichierMap=nomSortie+".mapset";
+	nomFichierImg=nomSortie+".map";
+	nomFichierStat=nomSortie+".stat";
+	nomFichierFondCarte=nomGen+".w";
+    }
+
+    public void setParametersMap(int nbX, int nbY, int nbZ,Cadre unCadre)
+    {
+	myMap  = new MapComplexity(nbX,nbY,nbZ);
+        myMap.cadrer(unCadre.xMinNorm,unCadre.xMaxNorm,unCadre.yMinNorm,unCadre.yMaxNorm,unCadre.zMinNorm,unCadre.zMaxNorm);
+	myKolmo = new KolmoNLinTempo();
+	myConvergence=new Convergence();
+
+    }
+
+    public void lireFondCarte(Cadre unCadre) {
+	double latRad,longRad;
+       	double posXY[]=new double[2];
+	nbPtFondCarte=0;
+	try {
+	    FileReader file = new FileReader(nomFichierFondCarte);
+	    BufferedReader fileInput = new BufferedReader(file);
+	    String ligne,buffer;
+
+	    ligne = fileInput.readLine();
+	    StringTokenizer tokenizer = new StringTokenizer(ligne);
+	    nbPtFondCarte=Integer.parseInt(tokenizer.nextToken());
+	    fondX=new double[nbPtFondCarte];
+	    fondY=new double[nbPtFondCarte];
+
+	    for (int i=0;i<nbPtFondCarte;i++) {
+		ligne = fileInput.readLine();
+		tokenizer = new StringTokenizer(ligne);
+		latRad=Double.parseDouble(tokenizer.nextToken())*Constantes.DEGRE_TO_RADIAN; ;
+		longRad=Double.parseDouble(tokenizer.nextToken())*Constantes.DEGRE_TO_RADIAN; ;
+		posXY=unCadre.projection.forward(latRad,longRad);
+		fondX[i]=posXY[0];
+		fondY[i]=posXY[1];
+	    }
+	    fileInput.close();
+	} catch(IOException ioe) {
+	    System.err.println("Pas de fichier carte");
+	}
+    }
+
+
+
+    public void genererFilm(double tInit, double tFinal, Cadre unCadre, double periode)
+    {
+	ArrayList plotList=null,plotListProj=null;
+	double time=tInit;
+	double [][] map2D;
+	double pctX,pctY;
+	Plot unPlot;
+	double[] stat;
+
+	double heurePlot;
+	long idPlot;
+	int cpt;
+	    try {
+		FileWriter file = new FileWriter(nomFichierMap);
+		PrintWriter out = new PrintWriter(file);
+		FileWriter fileStat = new FileWriter(nomFichierStat);
+		PrintWriter outStat = new PrintWriter(fileStat);
+
+                out.println(myMap.nbX + " " + myMap.nbY + " " + myMap.nbZ+ " ");
+
+		out.println(unCadre.meanLongitude + " " +  unCadre.meanLatitude + " " +unCadre.xMin + " " + unCadre.xMax + " " + unCadre.yMin + " " + unCadre.yMax + " "+ unCadre.zMin + " " + unCadre.zMax);
+		cpt=1;
+		time=tInit;
+		//sauvegarde du fond de carte projete
+		/***************************************************************/
+		/*commentaire a remettre*/
+		lireFondCarte(unCadre);
+		out.println(nbPtFondCarte);
+		for (int i=0;i<nbPtFondCarte;i++) {
+		    pctX=(fondX[i]-unCadre.xMin)/(unCadre.xMax-unCadre.xMin);
+		    pctY=(fondY[i]-unCadre.yMin)/(unCadre.yMax-unCadre.yMin);
+		    out.println(pctX + " " + pctY);
+		}
+		/****************************************************************/
+
+		while (time<tFinal) {
+		    plotList=monFiltre.extrairePlotSetLatLong(time,unCadre);
+		    plotListProj=monFiltre.projectionLocale(plotList,unCadre);
+		    out.println(time + " " + plotListProj.size());
+		    System.out.println(" Time= " + time + " " + " NBplots= " +plotListProj.size());
+		    if (Constantes.METRIC==1){
+			//Calcul d'une carte d'exposants de Lyapunov
+			myKolmo.computeMap(plotListProj,myMap,time,CVDV);
+		    }
+		    else {
+			//calcul d'un carte de convergence
+			myConvergence.computeMap(plotListProj,myMap);
+		    }
+
+		    map2D=myMap.planeAverage();
+		    stat=myMap.computeStat();
+
+		    outStat.println(time + " " + stat[0] + " " + stat[1]);
+
+		    //sauvegarde des plots (en pourcentage de (xMax-xMin) et (yMax-yMin))
+		    for (int i=0;i<plotListProj.size();i++)
+			{
+			    unPlot=(Plot)plotListProj.get(i);
+			    if (unCadre.xMaxNorm!=unCadre.xMinNorm)
+			    pctX=(unPlot.getXPos()-unCadre.xMinNorm)/(unCadre.xMaxNorm-unCadre.xMinNorm);
+			    else pctX=0.0;
+			    if (unCadre.yMaxNorm!=unCadre.yMinNorm)
+			    pctY=(unPlot.getYPos()-unCadre.yMinNorm)/(unCadre.yMaxNorm-unCadre.yMinNorm);
+			    else pctY=0.0;
+			    heurePlot=unPlot.getCurTime();
+			    idPlot=unPlot.getId();
+			    out.println(idPlot + " " + heurePlot + " " + pctX + " " +  pctY);
+			}
+		    //sauvegarde de la carte
+		    System.out.println("Mapnumber " + cpt);
+		    for (int i=0; i<myMap.nbX;i++)
+			{
+			    for (int j=0; j<(myMap.nbY);j++)
+				{
+				    out.print(map2D[i][j] + " ");
+				}
+			    out.println();
+			}
+		    // separation des cartes
+		    time=time+periode;
+		    plotList.clear();
+		    plotListProj.clear();
+		    cpt++;
+		    out.flush();
+		    outStat.flush();
+		} while(time<tFinal);
+		out.close();
+		outStat.close();
+
+	    } catch(IOException ioe) {
+	    	System.err.println("Erreur fichier");
+	    }
+    }
+
+
+    public void genererImage(double time,Cadre unCadre)
+    {
+	ArrayList plotList,plotListProj=null;
+	double [][] map2D;
+	double pctX,pctY,pctZ;
+	Plot unPlot;
+	double heurePlot;
+
+	long idPlot;
+	    try {
+
+		FileWriter file = new FileWriter(nomFichierImg);
+		PrintWriter out = new PrintWriter(file);
+		unCadre.afficherCadre();
+                out.print(myMap.nbX + " " + myMap.nbY + " " + myMap.nbZ+ " ");
+		out.println(unCadre.xMin + " " + unCadre.xMax + " " + unCadre.yMin + " " + unCadre.yMax + " "+ unCadre.zMin + " " + unCadre.zMax);
+		plotList=monFiltre.extrairePlotSetLatLong(time,unCadre);
+		plotListProj=monFiltre.projectionLocale(plotList,unCadre);
+		out.println(time + " " + plotListProj.size());
+		System.out.println(" Time= " + time + " " + " NBplots= " + plotListProj.size());
+		if (Constantes.METRIC==1){
+		    //Calcul d'une carte d'exposants de Lyapunov
+		    myKolmo.computeMap(plotListProj,myMap,time,CVDV);
+		}
+		else {
+		    //calcul d'un carte de convergence
+		    myConvergence.computeMap(plotListProj,myMap);
+		}
+
+		map2D=myMap.planeAverage();
+
+		//sauvegarde des plots (en pourcentage de (xMax-xMin) et (yMax-yMin))
+		for (int i=0;i<plotListProj.size();i++)
+		    {
+			unPlot=(Plot)plotListProj.get(i);
+			if (unCadre.xMaxNorm!=unCadre.xMinNorm)
+			    pctX=(unPlot.getXPos()-unCadre.xMinNorm)/(unCadre.xMaxNorm-unCadre.xMinNorm);
+			    else pctX=0.0;
+			    if (unCadre.yMaxNorm!=unCadre.yMinNorm)
+			    pctY=(unPlot.getYPos()-unCadre.yMinNorm)/(unCadre.yMaxNorm-unCadre.yMinNorm);
+			    else pctY=0.0;
+			    heurePlot=unPlot.getCurTime();
+			    idPlot=unPlot.getId();
+			    out.println(idPlot + " " + heurePlot + " " + pctX + " " +  pctY);
+			}
+		//sauvegarde de la carte
+		for (int i=0; i<myMap.nbX;i++)
+		    {
+			for (int j=0; j<(myMap.nbY);j++)
+			    {
+				out.print(map2D[i][j] + " ");
+			    }
+			out.println();
+		    }
+		plotList.clear();
+		plotListProj.clear();
+		out.close();
+	    } catch(IOException ioe) {
+	    	System.err.println("Erreur fichier");
+	    }
+    }
+
+
+    public static void main(String[] args){
+	Cadre monCadre= new Cadre(LONG_MIN,LONG_MAX,LAT_MIN,LAT_MAX,ALTI_MIN,ALTI_MAX);
+	Control ctrl=new Control(NOM_GEN,HORIZON_MOINS,HORIZON_PLUS);
+	ctrl.setParametersMap(NBX,NBY,NBZ,monCadre);
+	ctrl.genererFilm(T_INIT,T_FINAL,monCadre,PERIODE);
+	FiltreBase.close();
+    }
+
+}
